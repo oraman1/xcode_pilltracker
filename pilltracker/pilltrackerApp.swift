@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct pilltrackerApp: App {
+    @State private var store = MedicationStore()
+
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(store)
         }
     }
 }
