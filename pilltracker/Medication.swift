@@ -114,6 +114,33 @@ struct Medication: Identifiable, Codable, Equatable {
         return times.allSatisfy { isCompleted(time: $0, on: day) }
     }
 
+    enum DoseStatus {
+        case completed
+        case missed
+        case pending
+    }
+
+    func doseStatus(time: TimeOfDay, on day: Date, now: Date = Date()) -> DoseStatus {
+        let doseDate = time.date(on: day)
+        if completions.contains(doseDate) { return .completed }
+
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfDoseDay = calendar.startOfDay(for: day)
+
+        // Any uncompleted dose on a past day is missed — the day is over.
+        if startOfDoseDay < startOfToday { return .missed }
+
+        // For doses on today: missed once a later same-day dose has come due.
+        if calendar.isDate(day, inSameDayAs: now) {
+            for t in times.sorted() where t > time {
+                if t.date(on: day) <= now { return .missed }
+            }
+        }
+
+        return .pending
+    }
+
     /// The next scheduled dose at or after `now` that hasn't been completed yet.
     func nextDue(now: Date = Date()) -> (day: Date, time: TimeOfDay)? {
         guard !daysOfWeek.isEmpty, !times.isEmpty else { return nil }

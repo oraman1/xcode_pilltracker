@@ -13,27 +13,39 @@ struct ContentView: View {
     @State private var showingAdd = false
     @State private var editingMedication: Medication?
     @State private var photoMedication: Medication?
+    @State private var dayOffset: Int = 0
+
+    private let dayRange = -60...60
+
+    private var viewedDate: Date {
+        Self.date(forOffset: dayOffset)
+    }
+
+    private static func date(forOffset offset: Int) -> Date {
+        let start = Calendar.current.startOfDay(for: Date())
+        return Calendar.current.date(byAdding: .day, value: offset, to: start) ?? start
+    }
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                dateHeader
+                Divider()
+
                 if store.medications.isEmpty {
                     emptyState
                 } else {
-                    List {
-                        ForEach(store.medications) { medication in
-                            MedicationRow(
-                                medication: medication,
-                                onToggleTime: { time in
-                                    store.toggleCompletion(for: medication.id, time: time)
-                                },
-                                onEdit: { editingMedication = medication },
-                                onPhoto: { photoMedication = medication }
+                    TabView(selection: $dayOffset) {
+                        ForEach(dayRange, id: \.self) { offset in
+                            DayPage(
+                                date: Self.date(forOffset: offset),
+                                onEdit: { editingMedication = $0 },
+                                onPhoto: { photoMedication = $0 }
                             )
+                            .tag(offset)
                         }
-                        .onDelete(perform: store.delete)
                     }
-                    .listStyle(.insetGrouped)
+                    .tabViewStyle(.page(indexDisplayMode: .never))
                 }
             }
             .navigationTitle("Pill Tracker")
@@ -58,6 +70,67 @@ struct ContentView: View {
         }
     }
 
+    private var dateHeader: some View {
+        HStack(spacing: 8) {
+            Button {
+                dayOffset -= 1
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.title2.weight(.semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .disabled(dayOffset <= dayRange.lowerBound)
+
+            Spacer()
+
+            Button {
+                if dayOffset != 0 { dayOffset = 0 }
+            } label: {
+                VStack(spacing: 2) {
+                    Text(weekdayString)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(isToday ? Color.blue : Color.primary)
+                    Text(dateString)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if !isToday {
+                        Text("Tap to return to today")
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                dayOffset += 1
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.title2.weight(.semibold))
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+            .disabled(dayOffset >= dayRange.upperBound)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+    }
+
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(viewedDate)
+    }
+
+    private var weekdayString: String {
+        viewedDate.formatted(.dateTime.weekday(.wide))
+    }
+
+    private var dateString: String {
+        viewedDate.formatted(.dateTime.month(.wide).day().year())
+    }
+
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "pills.fill")
@@ -69,12 +142,60 @@ struct ContentView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+}
+
+private struct DayPage: View {
+    @Environment(MedicationStore.self) private var store
+    let date: Date
+    let onEdit: (Medication) -> Void
+    let onPhoto: (Medication) -> Void
+
+    private var scheduledMeds: [Medication] {
+        let weekday = Calendar.current.component(.weekday, from: date)
+        return store.medications.filter { $0.daysOfWeek.contains(weekday) }
+    }
+
+    var body: some View {
+        Group {
+            if scheduledMeds.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.secondary)
+                    Text("No medications scheduled")
+                        .font(.headline)
+                    Text("Nothing is due on this day.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+            } else {
+                List {
+                    ForEach(scheduledMeds) { medication in
+                        MedicationRow(
+                            medication: medication,
+                            viewedDate: date,
+                            onToggleTime: { time in
+                                store.toggleCompletion(for: medication.id, time: time, on: date)
+                            },
+                            onEdit: { onEdit(medication) },
+                            onPhoto: { onPhoto(medication) }
+                        )
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+        }
     }
 }
 
 private struct MedicationRow: View {
     let medication: Medication
+    let viewedDate: Date
     let onToggleTime: (TimeOfDay) -> Void
     let onEdit: () -> Void
     let onPhoto: () -> Void
@@ -108,8 +229,6 @@ private struct MedicationRow: View {
                                     .background(Color(.systemGray5))
                                     .clipShape(Capsule())
                             }
-                            daysText
-                                .font(.body)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
@@ -133,14 +252,13 @@ private struct MedicationRow: View {
 
                 FlowLayout(spacing: 6) {
                     ForEach(medication.times) { time in
+                        let status = medication.doseStatus(time: time, on: viewedDate)
                         TimeChip(
                             time: time,
-                            isCompleted: medication.isCompleted(time: time, on: Date()),
-                            isEnabled: medication.isScheduledToday(),
-                            isNextDue: isNextDueToday(time: time)
-                        ) {
-                            onToggleTime(time)
-                        }
+                            status: status,
+                            isNextDue: isNextDue(time: time),
+                            action: { onToggleTime(time) }
+                        )
                     }
                 }
             }
@@ -162,41 +280,12 @@ private struct MedicationRow: View {
         medication.nextDue()
     }
 
-    private func isNextDueToday(time: TimeOfDay) -> Bool {
+    private func isNextDue(time: TimeOfDay) -> Bool {
         guard let next = nextDue else { return false }
-        guard Calendar.current.isDateInToday(next.day) else { return false }
+        guard Calendar.current.isDate(next.day, inSameDayAs: viewedDate) else { return false }
         return next.time == time
     }
 
-    private var daysText: Text {
-        let weekdays: Set<Int> = [2, 3, 4, 5, 6]
-        let weekends: Set<Int> = [1, 7]
-        if medication.daysOfWeek.count == 7 {
-            return Text("Every day").foregroundStyle(.secondary)
-        }
-        if medication.daysOfWeek == weekdays {
-            return Text("Weekdays").foregroundStyle(.secondary)
-        }
-        if medication.daysOfWeek == weekends {
-            return Text("Weekends").foregroundStyle(.secondary)
-        }
-
-        let nextWeekday = nextDue.map { Calendar.current.component(.weekday, from: $0.day) }
-        let days = Weekday.allCases.filter { medication.daysOfWeek.contains($0.rawValue) }
-
-        return days.enumerated().reduce(Text("")) { acc, pair in
-            let (idx, day) = pair
-            let isNext = day.rawValue == nextWeekday
-            var dayText = Text(day.shortLabel)
-            if isNext {
-                dayText = dayText.foregroundColor(.blue).bold()
-            } else {
-                dayText = dayText.foregroundStyle(.secondary)
-            }
-            let separator = idx == 0 ? Text("") : Text(", ").foregroundStyle(.secondary)
-            return acc + separator + dayText
-        }
-    }
 }
 
 private struct PhotoPanel: View {
@@ -246,35 +335,55 @@ private struct RowWidthKey: PreferenceKey {
 
 private struct TimeChip: View {
     let time: TimeOfDay
-    let isCompleted: Bool
-    let isEnabled: Bool
+    let status: Medication.DoseStatus
     let isNextDue: Bool
     let action: () -> Void
 
     private var textColor: Color {
-        if isCompleted { return .white }
-        if isNextDue { return .blue }
-        return .primary
+        switch status {
+        case .completed: return .white
+        case .missed: return .red
+        case .pending: return isNextDue ? .blue : .primary
+        }
+    }
+
+    private var backgroundColor: Color {
+        switch status {
+        case .completed: return .accentColor
+        case .missed: return Color.red.opacity(0.15)
+        case .pending: return Color(.systemGray6)
+        }
+    }
+
+    private var iconName: String {
+        switch status {
+        case .completed: return "checkmark.circle.fill"
+        case .missed: return "xmark.circle.fill"
+        case .pending: return "circle"
+        }
+    }
+
+    private var fontWeight: Font.Weight {
+        if status == .missed { return .bold }
+        return isNextDue ? .bold : .semibold
     }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: isCompleted ? "checkmark.circle.fill" : "circle")
+                Image(systemName: iconName)
                     .font(.body)
                 Text(timeString)
-                    .font(.body.weight(isNextDue ? .bold : .semibold))
+                    .font(.body.weight(fontWeight))
                     .monospacedDigit()
             }
             .foregroundStyle(textColor)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(isCompleted ? Color.accentColor : Color(.systemGray6))
+            .background(backgroundColor)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.4)
     }
 
     private var timeString: String {
