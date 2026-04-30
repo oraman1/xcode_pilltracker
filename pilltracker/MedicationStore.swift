@@ -54,8 +54,14 @@ final class MedicationStore {
         let doseDate = time.date(on: day)
         if medications[index].completions.contains(doseDate) {
             medications[index].completions.remove(doseDate)
+            if let supply = medications[index].dosesAvailable {
+                medications[index].dosesAvailable = supply + 1
+            }
         } else {
             medications[index].completions.insert(doseDate)
+            if let supply = medications[index].dosesAvailable {
+                medications[index].dosesAvailable = max(0, supply - 1)
+            }
         }
     }
 

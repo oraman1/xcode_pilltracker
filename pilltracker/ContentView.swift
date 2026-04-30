@@ -250,6 +250,19 @@ private struct MedicationRow: View {
                     }
                 }
 
+                if let warning = medication.lowSupplyMessage {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                        Text(warning)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.orange.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+
                 FlowLayout(spacing: 6) {
                     ForEach(medication.times) { time in
                         let status = medication.doseStatus(time: time, on: viewedDate)

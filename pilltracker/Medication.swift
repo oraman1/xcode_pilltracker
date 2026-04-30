@@ -36,6 +36,7 @@ struct Medication: Identifiable, Codable, Equatable {
     var daysOfWeek: Set<Int>
     var times: [TimeOfDay]
     var dose: String = ""
+    var dosesAvailable: Int? = nil
     var notes: String = ""
     var photoFilename: String? = nil
     var completions: Set<Date> = []
@@ -46,6 +47,7 @@ struct Medication: Identifiable, Codable, Equatable {
         daysOfWeek: Set<Int>,
         times: [TimeOfDay],
         dose: String = "",
+        dosesAvailable: Int? = nil,
         notes: String = "",
         photoFilename: String? = nil,
         completions: Set<Date> = []
@@ -55,13 +57,14 @@ struct Medication: Identifiable, Codable, Equatable {
         self.daysOfWeek = daysOfWeek
         self.times = times.sorted()
         self.dose = dose
+        self.dosesAvailable = dosesAvailable
         self.notes = notes
         self.photoFilename = photoFilename
         self.completions = completions
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, daysOfWeek, times, dose, notes, photoFilename, completions
+        case id, name, daysOfWeek, times, dose, dosesAvailable, notes, photoFilename, completions
         case hour, minute  // legacy single-time fields
     }
 
@@ -71,6 +74,7 @@ struct Medication: Identifiable, Codable, Equatable {
         name = try c.decode(String.self, forKey: .name)
         daysOfWeek = try c.decode(Set<Int>.self, forKey: .daysOfWeek)
         dose = try c.decodeIfPresent(String.self, forKey: .dose) ?? ""
+        dosesAvailable = try c.decodeIfPresent(Int.self, forKey: .dosesAvailable)
         notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         photoFilename = try c.decodeIfPresent(String.self, forKey: .photoFilename)
 
@@ -95,6 +99,7 @@ struct Medication: Identifiable, Codable, Equatable {
         try c.encode(daysOfWeek, forKey: .daysOfWeek)
         try c.encode(times, forKey: .times)
         try c.encode(dose, forKey: .dose)
+        try c.encodeIfPresent(dosesAvailable, forKey: .dosesAvailable)
         try c.encode(notes, forKey: .notes)
         try c.encodeIfPresent(photoFilename, forKey: .photoFilename)
         try c.encode(completions, forKey: .completions)
@@ -159,6 +164,33 @@ struct Medication: Identifiable, Codable, Equatable {
             }
         }
         return nil
+    }
+
+    /// Average doses per calendar day, factoring in scheduled days of the week.
+    var averageDosesPerDay: Double {
+        guard !daysOfWeek.isEmpty, !times.isEmpty else { return 0 }
+        return Double(times.count) * Double(daysOfWeek.count) / 7.0
+    }
+
+    /// Days of medication remaining at the current schedule, if supply is being tracked.
+    var daysRemaining: Double? {
+        guard let supply = dosesAvailable else { return nil }
+        guard averageDosesPerDay > 0 else { return nil }
+        return Double(max(0, supply)) / averageDosesPerDay
+    }
+
+    /// Warning text shown when fewer than 5 days of medication remain.
+    var lowSupplyMessage: String? {
+        guard let days = daysRemaining else { return nil }
+        guard days < 5 else { return nil }
+        if (dosesAvailable ?? 0) <= 0 {
+            return "Out of medication — order now"
+        }
+        let dayCount = Int(days.rounded(.down))
+        if dayCount == 0 {
+            return "Less than 1 day left — order now"
+        }
+        return "\(dayCount) day\(dayCount == 1 ? "" : "s") left — order more"
     }
 
     func currentStreak(now: Date = Date()) -> Int {

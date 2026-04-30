@@ -15,6 +15,7 @@ struct MedicationFormView: View {
     @State private var selectedDays: Set<Int>
     @State private var times: [TimeOfDay]
     @State private var dose: String
+    @State private var dosesAvailableText: String
     @State private var notes: String
     @State private var showingDeleteConfirm = false
 
@@ -26,12 +27,14 @@ struct MedicationFormView: View {
             _selectedDays = State(initialValue: [])
             _times = State(initialValue: [TimeOfDay(hour: 9, minute: 0)])
             _dose = State(initialValue: "")
+            _dosesAvailableText = State(initialValue: "")
             _notes = State(initialValue: "")
         case .edit(let med):
             _name = State(initialValue: med.name)
             _selectedDays = State(initialValue: med.daysOfWeek)
             _times = State(initialValue: med.times)
             _dose = State(initialValue: med.dose)
+            _dosesAvailableText = State(initialValue: med.dosesAvailable.map(String.init) ?? "")
             _notes = State(initialValue: med.notes)
         }
     }
@@ -39,9 +42,24 @@ struct MedicationFormView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Medication") {
-                    TextField("Name", text: $name)
-                    TextField("Dose (e.g. 200mg, 1 tablet)", text: $dose)
+                Section {
+                    LabeledContent("Name") {
+                        TextField("e.g. Paracetamol", text: $name)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Dose") {
+                        TextField("e.g. 1 tablet", text: $dose)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Remaining Doses") {
+                        TextField("0", text: $dosesAvailableText)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                    }
+                } header: {
+                    Text("Medication")
+                } footer: {
+                    Text("Assumes the dosage is the same at every dose. The amount available will count down by one each time you mark a dose complete.")
                 }
 
                 Section("Days of week") {
@@ -103,6 +121,21 @@ struct MedicationFormView: View {
                 }
 
                 if case .edit = mode {
+                    Section {
+                        Button {
+                            dose = ""
+                            dosesAvailableText = ""
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Label("Reset Medication", systemImage: "arrow.counterclockwise")
+                                Spacer()
+                            }
+                        }
+                    } footer: {
+                        Text("Use this when a repeat prescription arrives. Re-enter the dose and amount available, then save.")
+                    }
+
                     Section {
                         Button(role: .destructive) {
                             showingDeleteConfirm = true
@@ -183,10 +216,18 @@ struct MedicationFormView: View {
         }
     }
 
+    private var parsedDosesAvailable: Int? {
+        let trimmed = dosesAvailableText.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, let value = Int(trimmed), value >= 0 else { return nil }
+        return value
+    }
+
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
             && !selectedDays.isEmpty
             && !times.isEmpty
+            && !dose.trimmingCharacters(in: .whitespaces).isEmpty
+            && parsedDosesAvailable != nil
     }
 
     private func save() {
@@ -194,6 +235,7 @@ struct MedicationFormView: View {
         let trimmedDose = dose.trimmingCharacters(in: .whitespaces)
         let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         let sortedTimes = times.sorted()
+        let supply = parsedDosesAvailable
 
         switch mode {
         case .add:
@@ -202,6 +244,7 @@ struct MedicationFormView: View {
                 daysOfWeek: selectedDays,
                 times: sortedTimes,
                 dose: trimmedDose,
+                dosesAvailable: supply,
                 notes: trimmedNotes
             )
             store.add(med)
@@ -211,6 +254,7 @@ struct MedicationFormView: View {
             updated.daysOfWeek = selectedDays
             updated.times = sortedTimes
             updated.dose = trimmedDose
+            updated.dosesAvailable = supply
             updated.notes = trimmedNotes
             store.update(updated)
         }
