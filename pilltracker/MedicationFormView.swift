@@ -168,7 +168,7 @@ struct MedicationFormView: View {
                 Button("Delete", role: .destructive) { deleteMedication() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This will remove the medication and its streak history. This can't be undone.")
+                Text("This will remove the medication and its history. This can't be undone.")
             }
         }
     }

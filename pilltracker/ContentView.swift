@@ -213,54 +213,29 @@ private struct MedicationRow: View {
             PhotoPanel(medication: medication, action: onPhoto, size: photoSize)
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    Button(action: onEdit) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(medication.name)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .lineLimit(2)
-                            if !medication.dose.isEmpty {
-                                Text(medication.dose)
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color(.systemGray5))
-                                    .clipShape(Capsule())
-                            }
+                Button(action: onEdit) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(medication.name)
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                        if !medication.dose.isEmpty {
+                            Text(medication.dose)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color(.systemGray5))
+                                .clipShape(Capsule())
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-
-                    VStack(alignment: .trailing, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "flame.fill")
-                                .foregroundStyle(.orange)
-                            Text("\(medication.currentStreak())")
-                                .font(.title3.weight(.bold))
-                                .monospacedDigit()
-                                .foregroundStyle(.primary)
-                        }
-                        Text("streak")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
-                if let warning = medication.lowSupplyMessage {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                        Text(warning)
-                            .font(.subheadline.weight(.semibold))
-                    }
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.orange.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                if let alert = medication.lowSupplyAlert {
+                    LowSupplyBanner(severity: alert.severity, message: alert.message)
                 }
 
                 FlowLayout(spacing: 6) {
@@ -336,6 +311,39 @@ private struct PhotoPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(medication.photoFilename == nil ? "Add photo" : "View photo")
+    }
+}
+
+private struct LowSupplyBanner: View {
+    let severity: Medication.LowSupplySeverity
+    let message: String
+
+    @State private var pulse = false
+
+    private var color: Color {
+        severity == .critical ? .red : .orange
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+        }
+        .foregroundStyle(color)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(color.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .opacity(severity == .critical && pulse ? 0.4 : 1.0)
+        .task(id: severity) {
+            pulse = false
+            if severity == .critical {
+                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                    pulse = true
+                }
+            }
+        }
     }
 }
 

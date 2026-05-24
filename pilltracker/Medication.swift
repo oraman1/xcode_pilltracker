@@ -179,44 +179,28 @@ struct Medication: Identifiable, Codable, Equatable {
         return Double(max(0, supply)) / averageDosesPerDay
     }
 
-    /// Warning text shown when fewer than 5 days of medication remain.
-    var lowSupplyMessage: String? {
-        guard let days = daysRemaining else { return nil }
-        guard days < 5 else { return nil }
-        if (dosesAvailable ?? 0) <= 0 {
-            return "Out of medication — order now"
-        }
-        let dayCount = Int(days.rounded(.down))
-        if dayCount == 0 {
-            return "Less than 1 day left — order now"
-        }
-        return "\(dayCount) day\(dayCount == 1 ? "" : "s") left — order more"
+    enum LowSupplySeverity {
+        case warning   // 4 or 5 whole days remaining → orange
+        case critical  // fewer than 4 whole days remaining → red & flashing
     }
 
-    func currentStreak(now: Date = Date()) -> Int {
-        guard !daysOfWeek.isEmpty, !times.isEmpty else { return 0 }
-        let calendar = Calendar.current
-        let startOfToday = calendar.startOfDay(for: now)
-        var streak = 0
-        var cursor = startOfToday
-        var isToday = true
+    /// Tiered alert for remaining doses. Triggers when 5 or fewer whole days remain.
+    var lowSupplyAlert: (severity: LowSupplySeverity, message: String)? {
+        guard let days = daysRemaining else { return nil }
+        let dayCount = Int(days.rounded(.down))
+        guard dayCount <= 5 else { return nil }
 
-        for _ in 0..<(366 * 2) {
-            let weekday = calendar.component(.weekday, from: cursor)
-            if daysOfWeek.contains(weekday) {
-                if isFullyCompleted(on: cursor) {
-                    streak += 1
-                } else if isToday {
-                    // Today's doses might still be pending; don't break the streak.
-                } else {
-                    break
-                }
-            }
-            isToday = false
-            guard let prev = calendar.date(byAdding: .day, value: -1, to: cursor) else { break }
-            cursor = prev
+        let message: String
+        if (dosesAvailable ?? 0) <= 0 {
+            message = "Out of medication — order now"
+        } else if dayCount == 0 {
+            message = "Less than 1 day left — order now"
+        } else {
+            message = "\(dayCount) day\(dayCount == 1 ? "" : "s") left — order more"
         }
-        return streak
+
+        let severity: LowSupplySeverity = dayCount < 4 ? .critical : .warning
+        return (severity, message)
     }
 }
 
